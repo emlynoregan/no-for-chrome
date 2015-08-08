@@ -39,6 +39,44 @@ function getCurrentTabUrl(callback) {
   // alert(url); // Shows "undefined", because chrome.tabs.query is async.
 }
 
+function getCurrentTabComplete(callback) {
+  // Query filter to be passed to chrome.tabs.query - see
+  // https://developer.chrome.com/extensions/tabs#method-query
+  var queryInfo = {
+    active: true,
+    currentWindow: true
+  };
+
+  chrome.tabs.query(queryInfo, function(tabs) {
+    // chrome.tabs.query invokes the callback with a list of tabs that match the
+    // query. When the popup is opened, there is certainly a window and at least
+    // one tab, so we can safely assume that |tabs| is a non-empty array.
+    // A window can only have one active tab at a time, so the array consists of
+    // exactly one tab.
+    var tab = tabs[0];
+
+    if (tab.status == "complete")
+    {
+      callback(tab);
+    }
+    else
+    {
+      setTimeout(function () {
+        getCurrentTabComplete(callback)
+      }, 500);
+    }
+  });
+
+  // Most methods of the Chrome extension APIs are asynchronous. This means that
+  // you CANNOT do something like this:
+  //
+  // var url;
+  // chrome.tabs.query(queryInfo, function(tabs) {
+  //   url = tabs[0].url;
+  // });
+  // alert(url); // Shows "undefined", because chrome.tabs.query is async.
+}
+
 function closeCurrentTab() {
   // Query filter to be passed to chrome.tabs.query - see
   // https://developer.chrome.com/extensions/tabs#method-query
@@ -60,14 +98,74 @@ function closeCurrentTab() {
   });
 }
 
-function dumpHistory(){
+function getCurrentTabWindow(callback){
+  // Query filter to be passed to chrome.tabs.query - see
+  // https://developer.chrome.com/extensions/tabs#method-query
   var queryInfo = {
-    text:""
+    active: true,
+    currentWindow: true
   };
 
-  chrome.history.search(queryInfo, function(history) {
-    console.log(history);
+  chrome.tabs.query(queryInfo, function(tabs) {
+    // chrome.tabs.query invokes the callback with a list of tabs that match the
+    // query. When the popup is opened, there is certainly a window and at least
+    // one tab, so we can safely assume that |tabs| is a non-empty array.
+    // A window can only have one active tab at a time, so the array consists of
+    // exactly one tab.
+    var tab = tabs[0];
+
+    console.log(tab.windowId);
+
+    chrome.windows.get(tab.windowId, null, callback);
   });
+}
+
+function backup(url)
+{
+  function url_domain(data) 
+  {
+      if (data)
+      {
+          var a = document.createElement('a');
+          a.href = data;
+          return a.hostname;
+      }
+      else
+      {
+          return null;
+      }
+  }  
+
+  ldomain = url_domain(url);
+  console.log(1);
+  console.log("'" + ldomain + "'");
+
+  chrome.tabs.executeScript(null, {"file": "backup.js"}, function(){
+    getCurrentTabComplete(function(tab){
+      console.log(tab)
+      lnewUrl = tab.url;
+      lnewDomain = url_domain(lnewUrl);
+      console.log(2);
+      console.log("'" + lnewDomain + "'");
+
+      if (!lnewDomain.localeCompare(ldomain))
+      {
+        if (lnewDomain.localeCompare(url))
+        {
+          chrome.tabs.remove(tab.id);
+        }
+        else
+        {
+          console.log(3);
+          backup(url);
+        }
+      }
+      else if (lnewDomain == "newtab")
+      {
+        chrome.tabs.remove(tab.id);
+      }
+    });
+  })
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -95,8 +193,10 @@ document.addEventListener('DOMContentLoaded', function() {
             method: "GET",
         }).done(function(response){
           alert("You just sent this message: '" + lmessage + "'")
-          closeCurrentTab();
-          //dumpHistory();
+
+          backup(url);
+
+          //closeCurrentTab();
         }).fail(function(){
           alert("fail sending to " + url)
         });
